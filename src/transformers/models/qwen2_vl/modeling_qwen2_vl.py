@@ -1272,6 +1272,11 @@ class Qwen2VLModel(Qwen2VLPreTrainedModel):
                 raise ValueError("audio_features provided but audio_lengths is None")
             if self.config.audio_token_id is None:
                 raise ValueError("audio_features provided but audio_token_id is not set in config")
+            if not hasattr(self, "audio_encoder") or not hasattr(self, "audio_projector"):
+                raise ValueError(
+                    "audio_features provided but audio_encoder/audio_projector not initialized. "
+                    "Set audio_config in the model config to enable audio support."
+                )
             audio_embeds = self.get_audio_features(audio_features, audio_lengths)
             audio_embeds = torch.cat(audio_embeds, dim=0).to(inputs_embeds.device, inputs_embeds.dtype)
             if input_ids is None:
