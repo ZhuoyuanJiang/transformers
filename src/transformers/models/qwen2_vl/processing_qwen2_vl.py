@@ -21,7 +21,8 @@
 Processor class for Qwen2-VL.
 """
 
-from typing import Optional, Union
+import math
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 
@@ -88,6 +89,12 @@ class Qwen2VLProcessor(ProcessorMixin):
             if getattr(tokenizer, "video_token_id", None)
             else tokenizer.convert_tokens_to_ids(self.video_token)
         )
+        self.audio_token = "<|audio_pad|>" if not hasattr(tokenizer, "audio_token") else tokenizer.audio_token
+        self.audio_token_id = (
+            tokenizer.audio_token_id
+            if getattr(tokenizer, "audio_token_id", None)
+            else tokenizer.convert_tokens_to_ids(self.audio_token)
+        )
         super().__init__(image_processor, tokenizer, video_processor, chat_template=chat_template)
 
     def __call__(
@@ -95,6 +102,7 @@ class Qwen2VLProcessor(ProcessorMixin):
         images: ImageInput = None,
         text: Union[TextInput, PreTokenizedInput, list[TextInput], list[PreTokenizedInput]] = None,
         videos: VideoInput = None,
+        audios: Optional[List[Tuple[np.ndarray, int]]] = None,
         **kwargs: Unpack[Qwen2VLProcessorKwargs],
     ) -> BatchFeature:
         """
@@ -140,6 +148,7 @@ class Qwen2VLProcessor(ProcessorMixin):
         )
 
         image_inputs = videos_inputs = {}
+        audio_inputs = {}
         if images is not None:
             image_inputs = self.image_processor(images=images, **output_kwargs["images_kwargs"])
             image_grid_thw = image_inputs["image_grid_thw"]
@@ -147,6 +156,24 @@ class Qwen2VLProcessor(ProcessorMixin):
         if videos is not None:
             videos_inputs = self.video_processor(videos=videos, **output_kwargs["videos_kwargs"])
             video_grid_thw = videos_inputs["video_grid_thw"]
+
+        if audios is not None:
+            # Process each audio through WhisperFeatureExtractor to get mel spectrograms.
+            # Whisper expects 16kHz mono float32 audio (handled by fetch_audio in qwen_vl_utils).
+            # Each audio produces up to 1500 tokens (30s * 50 tokens/s).
+            from transformers import WhisperFeatureExtractor
+
+            whisper_fe = WhisperFeatureExtractor()
+            audio_features_list = []
+            audio_token_counts = []
+            for audio_array, sr in audios:
+                duration_seconds = len(audio_array) / sr
+                num_audio_tokens = min(math.ceil(duration_seconds * 50), 1500)
+                audio_token_counts.append(num_audio_tokens)
+                features = whisper_fe(audio_array, sampling_rate=sr, return_tensors="np")
+                audio_features_list.append(features["input_features"][0])
+            audio_inputs["audio_features"] = np.stack(audio_features_list)
+            audio_inputs["audio_lengths"] = audio_token_counts
 
         if not isinstance(text, list):
             text = [text]
@@ -173,6 +200,15 @@ class Qwen2VLProcessor(ProcessorMixin):
                     index += 1
                 text[i] = text[i].replace("<|placeholder|>", self.video_token)
 
+        if audios is not None:
+            index = 0
+            for i in range(len(text)):
+                while self.audio_token in text[i]:
+                    num_audio_tokens = audio_inputs["audio_lengths"][index]
+                    text[i] = text[i].replace(self.audio_token, "<|placeholder|>" * num_audio_tokens, 1)
+                    index += 1
+                text[i] = text[i].replace("<|placeholder|>", self.audio_token)
+
         return_tensors = output_kwargs["text_kwargs"].pop("return_tensors", None)
         return_mm_token_type_ids = output_kwargs["text_kwargs"].pop("return_mm_token_type_ids", False)
         text_inputs = self.tokenizer(text, **output_kwargs["text_kwargs"], return_tensors=None)
@@ -184,7 +220,9 @@ class Qwen2VLProcessor(ProcessorMixin):
             mm_token_type_ids[array_ids == self.image_token_id] = 1
             text_inputs["mm_token_type_ids"] = mm_token_type_ids.tolist()
 
-        return BatchFeature(data={**text_inputs, **image_inputs, **videos_inputs}, tensor_type=return_tensors)
+        return BatchFeature(
+            data={**text_inputs, **image_inputs, **videos_inputs, **audio_inputs}, tensor_type=return_tensors
+        )
 
     def _get_num_multimodal_tokens(self, image_sizes=None, video_sizes=None, **kwargs):
         """
