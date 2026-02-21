@@ -259,6 +259,50 @@ class Qwen2VLTextConfig(PretrainedConfig):
         super().__init__(tie_word_embeddings=tie_word_embeddings, **kwargs)
 
 
+class Qwen2VLAudioConfig(PretrainedConfig):
+    model_type = "qwen2_vl"
+    base_config_key = "audio_config"
+
+    def __init__(
+        self,
+        d_model=1280,
+        encoder_layers=32,
+        encoder_attention_heads=20,
+        encoder_ffn_dim=5120,
+        num_mel_bins=128,
+        max_source_positions=1500,
+        encoder_layerdrop=0.0,
+        activation_function="gelu",
+        scale_embedding=False,
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self.d_model = d_model
+        self.encoder_layers = encoder_layers
+        self.encoder_attention_heads = encoder_attention_heads
+        self.encoder_ffn_dim = encoder_ffn_dim
+        self.num_mel_bins = num_mel_bins
+        self.max_source_positions = max_source_positions
+        self.encoder_layerdrop = encoder_layerdrop
+        self.activation_function = activation_function
+        self.scale_embedding = scale_embedding
+
+    def to_whisper_config(self):
+        from ..whisper.configuration_whisper import WhisperConfig
+
+        return WhisperConfig(
+            d_model=self.d_model,
+            encoder_layers=self.encoder_layers,
+            encoder_attention_heads=self.encoder_attention_heads,
+            encoder_ffn_dim=self.encoder_ffn_dim,
+            num_mel_bins=self.num_mel_bins,
+            max_source_positions=self.max_source_positions,
+            encoder_layerdrop=self.encoder_layerdrop,
+            activation_function=self.activation_function,
+            scale_embedding=self.scale_embedding,
+        )
+
+
 class Qwen2VLConfig(PretrainedConfig):
     r"""
     This is the configuration class to store the configuration of a [`Qwen2VLModel`]. It is used to instantiate a
@@ -294,15 +338,21 @@ class Qwen2VLConfig(PretrainedConfig):
     ```"""
 
     model_type = "qwen2_vl"
-    sub_configs = {"vision_config": Qwen2VLVisionConfig, "text_config": Qwen2VLTextConfig}
+    sub_configs = {
+        "vision_config": Qwen2VLVisionConfig,
+        "text_config": Qwen2VLTextConfig,
+        "audio_config": Qwen2VLAudioConfig,
+    }
     keys_to_ignore_at_inference = ["past_key_values"]
 
     def __init__(
         self,
         text_config=None,
         vision_config=None,
+        audio_config=None,
         image_token_id=151655,
         video_token_id=151656,
+        audio_token_id=None,
         **kwargs,
     ):
         if isinstance(vision_config, dict):
@@ -316,10 +366,16 @@ class Qwen2VLConfig(PretrainedConfig):
             # For BC use all kwargs to init `TextConfig`
             self.text_config = self.sub_configs["text_config"](**kwargs)
 
+        if isinstance(audio_config, dict):
+            self.audio_config = self.sub_configs["audio_config"](**audio_config)
+        else:
+            self.audio_config = audio_config
+
         self.image_token_id = image_token_id
         self.video_token_id = video_token_id
+        self.audio_token_id = audio_token_id
 
         super().__init__(**kwargs)
 
 
-__all__ = ["Qwen2VLConfig", "Qwen2VLTextConfig"]
+__all__ = ["Qwen2VLAudioConfig", "Qwen2VLConfig", "Qwen2VLTextConfig"]
