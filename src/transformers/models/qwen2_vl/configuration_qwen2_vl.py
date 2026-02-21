@@ -341,7 +341,6 @@ class Qwen2VLConfig(PretrainedConfig):
     sub_configs = {
         "vision_config": Qwen2VLVisionConfig,
         "text_config": Qwen2VLTextConfig,
-        "audio_config": Qwen2VLAudioConfig,
     }
     keys_to_ignore_at_inference = ["past_key_values"]
 
@@ -367,7 +366,7 @@ class Qwen2VLConfig(PretrainedConfig):
             self.text_config = self.sub_configs["text_config"](**kwargs)
 
         if isinstance(audio_config, dict):
-            self.audio_config = self.sub_configs["audio_config"](**audio_config)
+            self.audio_config = Qwen2VLAudioConfig(**audio_config)
         else:
             self.audio_config = audio_config
 
