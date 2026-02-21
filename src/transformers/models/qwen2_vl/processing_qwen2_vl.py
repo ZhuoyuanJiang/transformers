@@ -161,9 +161,10 @@ class Qwen2VLProcessor(ProcessorMixin):
             # Process each audio through WhisperFeatureExtractor to get mel spectrograms.
             # Whisper expects 16kHz mono float32 audio (handled by fetch_audio in qwen_vl_utils).
             # Each audio produces up to 1500 tokens (30s * 50 tokens/s).
+            # feature_size=128 matches whisper-large-v3-turbo (default is 80 for older Whisper).
             from transformers import WhisperFeatureExtractor
 
-            whisper_fe = WhisperFeatureExtractor()
+            whisper_fe = WhisperFeatureExtractor(feature_size=128)
             audio_features_list = []
             audio_token_counts = []
             for audio_array, sr in audios:
